@@ -68,33 +68,34 @@ async def register_instance(request: Request):
         "BannedPlayers": banned_players
     })
 
-@app.post("/update_party")
-async def update_party(request: Request):
+@app.post("/create_party")
+async def create_party(request: Request):
     """
-    Handles party server heartbeat from Roblox.
-    Expects JSON body: {"p_id": 123, "players": 5}
-    Returns moderation status.
+    Placeholder for creating a new party server.
+    Expects JSON body with party details (e.g., owner, settings).
+    Returns party ID or error.
     """
     try:
         data = await request.json()
-        p_id = data.get("p_id")
-        players = data.get("players", 0)
-
-        if p_id not in active_servers:
-            raise HTTPException(status_code=404, detail="Party server not found")
-
-        # Update server info
-        active_servers[p_id]["players"] = players
-        active_servers[p_id]["last_seen"] = time.time()
-
-        # Fake moderation check (replace with real logic/DB query)
-        is_moderated = random.choice([False, False])  # Rarely true for testing
-
+        # Fake creation logic - in real app, save to DB and generate ID
+        party_id = random.randint(100000, 999999)
+        
+        active_servers[party_id] = {
+            "type": "party",
+            "owner": data.get("owner", 0),
+            "players": 1,
+            "created": time.time()
+        }
+        
+        print(f"Created party {party_id} for owner {data.get('owner')}")
+        
         return JSONResponse({
-            "PartyIsModerated": 1 if is_moderated else 0
+            "success": True,
+            "party_id": party_id,
+            "message": "Party created"
         })
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid request: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to create party: {str(e)}")
 
 # Optional: Add more endpoints as you expand (e.g., for errors, assets)
 @app.post("/report_error")
