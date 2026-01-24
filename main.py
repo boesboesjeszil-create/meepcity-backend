@@ -1,110 +1,119 @@
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import PlainTextResponse, JSONResponse
 import time
+import random
 import json
-import random  # For generating fake unique IDs
 
-app = FastAPI()
+app = FastAPI(title="MeepCity-like Backend for Roblox")
 
-# In-memory storage (replace with real database later, e.g., PostgreSQL on Render)
-active_servers = {}
-bad_sounds = []          # List of bad sound IDs (fake data for now)
-banned_players = []      # List of banned user IDs (fake data for now)
-
-@app.get("/")
-async def root():
-    return {"message": "Backend is alive! Use /docs for API docs."}
+# In-memory fake data (replace with real DB later)
+active_servers = {}     # key: unique/party id
+bad_sounds = [123456, 789012]          # example
+banned_players = [9999999, 8888888]    # example banned UserIds
 
 @app.get("/raw_unixtime")
-async def get_unixtime():
-    """Returns current Unix timestamp as plain text (matches your Roblox script's expectation)."""
+async def raw_unixtime():
     return PlainTextResponse(str(int(time.time())))
 
 @app.post("/instance.php")
-async def register_instance(request: Request):
-    """
-    Handles server registration from Roblox.
-    Expects POST with query params (players counts) and JSON body (player list).
-    Returns unique ID, server time, bad sounds, and banned players.
-    """
-    # Parse query params (e.g., ?unique=0&players_pc=0&... from Roblox script)
-    query_params = dict(request.query_params)
-    
-    # Parse JSON body (player list array)
+async def instance_register(request: Request):
+    # Query params from your script
+    params = dict(request.query_params)
+
+    # JSON body = player list
     try:
-        body = await request.json()
+        player_list = await request.json()
     except:
-        body = []  # Fallback if no body
+        player_list = []
 
-    # Generate a unique ID (fake/random for now; make it persistent in real DB)
-    unique_id = random.randint(10000, 99999)
+    # Fake unique ID if not provided (your script sends unique=0 first time)
+    unique = int(params.get("unique", 0))
+    if unique == 0:
+        unique = random.randint(100000, 999999)
 
-    # Store server info (in real app, save to DB)
-    active_servers[unique_id] = {
-        "players": len(body),
-        "platforms": {
-            "pc": int(query_params.get("players_pc", 0)),
-            "tablet": int(query_params.get("players_tablet", 0)),
-            "phone": int(query_params.get("players_phone", 0)),
-            "gamepad": int(query_params.get("players_gamepad", 0)),
-        },
-        "r15": int(query_params.get("players_r15", 0)),
-        "silent": int(query_params.get("players_silent", 0)),
-        "memory": int(query_params.get("memory", 0)),
-        "jobid": query_params.get("jobid", ""),
-        "last_seen": time.time()
+    # Store some info (you can expand)
+    active_servers[unique] = {
+        "players": len(player_list),
+        "jobid": params.get("jobid", ""),
+        "last_seen": time.time(),
+        "player_count_pc": int(params.get("players_pc", 0)),
+        # ... add others if you want
     }
 
-    # Fake data for bans/sounds (expand this later)
-    if not bad_sounds:
-        bad_sounds = [12345, 67890]  # Example bad sound IDs
-    if not banned_players:
-        banned_players = [99999, 88888]  # Example banned user IDs
-
     return JSONResponse({
-        "Unique": unique_id,
+        "Unique": unique,
         "ServerTime": int(time.time()),
         "BadSounds": bad_sounds,
         "BannedPlayers": banned_players
     })
 
-@app.post("/create_party")
-async def create_party(request: Request):
-    """
-    Placeholder for creating a new party server.
-    Expects JSON body with party details (e.g., owner, settings).
-    Returns party ID or error.
-    """
+@app.post("/update_party")
+async def update_party(request: Request):
     try:
         data = await request.json()
-        # Fake creation logic - in real app, save to DB and generate ID
-        party_id = random.randint(100000, 999999)
-        
-        active_servers[party_id] = {
-            "type": "party",
-            "owner": data.get("owner", 0),
-            "players": 1,
-            "created": time.time()
-        }
-        
-        print(f"Created party {party_id} for owner {data.get('owner')}")
-        
+        p_id = data.get("p_id")
+        players = data.get("players", 0)
+
+        if p_id not in active_servers:
+            # For now, just accept it (your script assumes it exists)
+            active_servers[p_id] = {"players": players, "type": "party"}
+        else:
+            active_servers[p_id]["players"] = players
+            active_servers[p_id]["last_seen"] = time.time()
+
+        # Moderated = 0 (no moderation yet)
         return JSONResponse({
-            "success": True,
-            "party_id": party_id,
-            "message": "Party created"
+            "PartyIsModerated": 0
         })
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to create party: {str(e)}")
+        raise HTTPException(400, detail=f"Invalid update_party data: {str(e)}")
 
-# Optional: Add more endpoints as you expand (e.g., for errors, assets)
+@app.post("/create_party")
+async def create_party(request: Request):
+    try:
+        data = await request.json()
+        # Minimal required fields (adjust based on what your full script sends)
+        owner = data.get("owner") or data.get("UserId") or data.get("userId") or 0
+
+        if owner == 0:
+            return JSONResponse({
+                "Response": "ERROR",
+                "message": "Missing owner / UserId"
+            }, status_code=400)
+
+        # Fake party creation
+        party_id = random.randint(1000000, 9999999)
+
+        active_servers[party_id] = {
+            "owner": owner,
+            "players": 1,
+            "type": "party",
+            "created": time.time()
+        }
+
+        # Return format your script seems to expect
+        return JSONResponse({
+            "Response": "SUCCESS",
+            "PartyId": party_id
+            # You can add "ReserveId" if script expects it, but usually Roblox generates it
+        })
+    except json.JSONDecodeError:
+        raise HTTPException(400, detail="Invalid JSON body")
+    except Exception as e:
+        raise HTTPException(500, detail=str(e))
+
 @app.post("/report_error")
 async def report_error(request: Request):
-    """Placeholder for error reporting from Roblox."""
-    body = await request.json()
-    # Log it somewhere (e.g., print or DB)
-    print(f"Error reported: {body}")
-    return JSONResponse({"status": "reported"})
+    try:
+        data = await request.json()  # or use request.form() if query-like
+        print("[REPORTED ERROR FROM ROBLOX]", data)
+        return JSONResponse({"status": "ok"})
+    except:
+        return JSONResponse({"status": "error"}, status_code=400)
+
+@app.get("/")
+async def root():
+    return {"status": "online", "docs": "/docs"}
 
 if __name__ == "__main__":
     import uvicorn
