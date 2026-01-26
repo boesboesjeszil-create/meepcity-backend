@@ -1,5 +1,6 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse, JSONResponse, Response
+from urllib.parse import parse_qs
 import time
 import random
 
@@ -9,7 +10,7 @@ active_parties = {}
 banned_users = {999999: {"hours": 24}}
 
 # --------------------
-# BASIC
+# BASIC / HEALTH
 # --------------------
 
 @app.get("/")
@@ -25,59 +26,69 @@ async def health_head():
 # --------------------
 
 @app.get("/raw_unixtime")
-async def get_unixtime():
+async def raw_unixtime():
     return PlainTextResponse(str(int(time.time())))
+
+# --------------------
+# REPORT ERROR (IMPORTANT)
+# --------------------
+
+@app.post("/report_error")
+async def report_error(request: Request):
+    try:
+        data = await request.json()
+    except:
+        data = await request.body()
+    print("[REPORT_ERROR]", data)
+    return {"ok": True}
 
 # --------------------
 # INSTANCE
 # --------------------
 
 @app.post("/instance.php")
-async def register_instance(request: Request):
+async def instance(request: Request):
     params = dict(request.query_params)
-
     try:
-        player_list = await request.json()
+        players = await request.json()
     except:
-        player_list = []
+        players = []
 
     unique = int(params.get("unique") or random.randint(10000, 99999))
 
     active_parties[unique] = {
         "type": "instance",
-        "players": len(player_list),
+        "players": len(players),
         "updated": time.time()
     }
 
-    return JSONResponse({
+    return {
         "Unique": unique,
         "ServerTime": int(time.time()),
         "BadSounds": [],
         "BannedPlayers": list(banned_users.keys())
-    })
+    }
 
 # --------------------
-# CREATE PARTY
+# CREATE PARTY (ROBLOX SAFE)
 # --------------------
-
-from urllib.parse import parse_qs
 
 @app.post("/create_party")
+@app.post("/createparty")
 async def create_party(request: Request):
-    body_bytes = await request.body()
-
+    raw = await request.body()
     data = {}
 
-    # Try JSON first
+    # Try JSON
     try:
         data = await request.json()
     except:
         pass
 
-    # Fallback: Roblox form-encoded body
-    if not data and body_bytes:
+    # Try form-encoded
+    if not data and raw:
         try:
-            parsed = parse_qs(body_bytes.decode())
+            parsed = parse_qs(raw.decode())
             data = {k: v[0] for k, v in parsed.items()}
         except:
             pass
@@ -87,8 +98,13 @@ async def create_party(request: Request):
     title = data.get("title", "Untitled Party")
 
     if uid == 0:
-        print("[Backend] create_party failed: missing uid")
-        return JSONResponse({"Response": "ERROR"}, status_code=200)
+        return {"Response": "ERROR"}
+
+    if uid in banned_users:
+        return {
+            "Response": "BANNED",
+            "BanHoursLeft": banned_users[uid]["hours"]
+        }
 
     party_id = random.randint(1_000_000, 9_999_999)
 
@@ -101,18 +117,19 @@ async def create_party(request: Request):
         "Created": time.time()
     }
 
-    print(f"[Backend] PARTY CREATED {party_id} BY {uid}")
+    print(f"[BACKEND] PARTY CREATED {party_id} BY {uid}")
 
-    return JSONResponse({
+    return {
         "Response": "SUCCESS",
         "PartyId": party_id
-    })
+    }
 
 # --------------------
 # UPDATE PARTY
 # --------------------
 
 @app.post("/update_party")
+@app.post("/updateparty")
 async def update_party(request: Request):
     try:
         data = await request.json()
@@ -126,13 +143,14 @@ async def update_party(request: Request):
         active_parties[p_id]["Players"] = players
         active_parties[p_id]["Updated"] = time.time()
 
-    return JSONResponse({"PartyIsModerated": 0})
+    return {"PartyIsModerated": 0}
 
 # --------------------
 # GET PARTY DATA
 # --------------------
 
 @app.post("/get_party_data")
+@app.post("/getpartydata")
 async def get_party_data(request: Request):
     try:
         data = await request.json()
@@ -142,31 +160,12 @@ async def get_party_data(request: Request):
     p_id = data.get("p_id")
 
     if p_id not in active_parties:
-        return JSONResponse(
-            {"Response": "ERROR", "message": "Party not found"},
-            status_code=404
-        )
+        return {"Response": "ERROR"}
 
     party = active_parties[p_id]
 
-    return JSONResponse({
+    return {
         "Response": "SUCCESS",
         "PartyOwner": party["PartyOwner"],
         "PartyReserveId": None
-    })
-
-# =========================================================
-# 🔁 ALIASES FOR ROBLOX (THIS IS THE IMPORTANT PART)
-# =========================================================
-
-@app.post("/createparty")
-async def createparty_alias(request: Request):
-    return await create_party(request)
-
-@app.post("/updateparty")
-async def updateparty_alias(request: Request):
-    return await update_party(request)
-
-@app.post("/getpartydata")
-async def getpartydata_alias(request: Request):
-    return await get_party_data(request)
+    }
