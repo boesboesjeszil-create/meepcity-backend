@@ -60,28 +60,35 @@ async def register_instance(request: Request):
 # CREATE PARTY
 # --------------------
 
+from urllib.parse import parse_qs
+
 @app.post("/create_party")
 async def create_party(request: Request):
-    try:
-        body = await request.json()
-    except:
-        body = {}
+    body_bytes = await request.body()
 
-    uid = body.get("uid") or body.get("userId") or 0
-    username = body.get("username", "Unknown")
-    title = body.get("title", "Untitled Party")
+    data = {}
+
+    # Try JSON first
+    try:
+        data = await request.json()
+    except:
+        pass
+
+    # Fallback: Roblox form-encoded body
+    if not data and body_bytes:
+        try:
+            parsed = parse_qs(body_bytes.decode())
+            data = {k: v[0] for k, v in parsed.items()}
+        except:
+            pass
+
+    uid = int(data.get("uid") or data.get("userId") or 0)
+    username = data.get("username", "Unknown")
+    title = data.get("title", "Untitled Party")
 
     if uid == 0:
-        return JSONResponse(
-            {"Response": "ERROR", "message": "Missing uid"},
-            status_code=400
-        )
-
-    if uid in banned_users:
-        return JSONResponse({
-            "Response": "BANNED",
-            "BanHoursLeft": banned_users[uid]["hours"]
-        })
+        print("[Backend] create_party failed: missing uid")
+        return JSONResponse({"Response": "ERROR"}, status_code=200)
 
     party_id = random.randint(1_000_000, 9_999_999)
 
@@ -94,7 +101,7 @@ async def create_party(request: Request):
         "Created": time.time()
     }
 
-    print(f"[Backend] Created party {party_id} for {uid} ({username})")
+    print(f"[Backend] PARTY CREATED {party_id} BY {uid}")
 
     return JSONResponse({
         "Response": "SUCCESS",
