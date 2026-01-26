@@ -5,12 +5,11 @@ import random
 
 app = FastAPI(title="MeepCity Roblox Backend Clone")
 
-# In-memory stores
 active_parties = {}
 banned_users = {999999: {"hours": 24}}
 
 # --------------------
-# BASIC / HEALTH
+# BASIC
 # --------------------
 
 @app.get("/")
@@ -30,7 +29,7 @@ async def get_unixtime():
     return PlainTextResponse(str(int(time.time())))
 
 # --------------------
-# INSTANCE REGISTRATION
+# INSTANCE
 # --------------------
 
 @app.post("/instance.php")
@@ -148,3 +147,19 @@ async def get_party_data(request: Request):
         "PartyOwner": party["PartyOwner"],
         "PartyReserveId": None
     })
+
+# =========================================================
+# 🔁 ALIASES FOR ROBLOX (THIS IS THE IMPORTANT PART)
+# =========================================================
+
+@app.post("/createparty")
+async def createparty_alias(request: Request):
+    return await create_party(request)
+
+@app.post("/updateparty")
+async def updateparty_alias(request: Request):
+    return await update_party(request)
+
+@app.post("/getpartydata")
+async def getpartydata_alias(request: Request):
+    return await get_party_data(request)
