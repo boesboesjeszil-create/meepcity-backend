@@ -6,6 +6,14 @@ import random
 
 app = FastAPI(title="MeepCity Roblox Backend Clone")
 
+@app.middleware("http")
+async def collapse_slashes(request: Request, call_next):
+    path = request.scope["path"]
+    while "//" in path:
+        path = path.replace("//", "/")
+    request.scope["path"] = path
+    return await call_next(request)
+
 # In-memory stores
 active_parties = {}  # party_id -> details
 banned_users = {999999: {"hours": 24}}  # example banned users
