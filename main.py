@@ -54,12 +54,6 @@ async def instance(request: Request):
 
     unique = int(params.get("unique") or random.randint(10000, 99999))
 
-    active_parties[unique] = {
-        "type": "instance",
-        "players": len(players),
-        "updated": time.time()
-    }
-
     return {
         "Unique": unique,
         "ServerTime": int(time.time()),
